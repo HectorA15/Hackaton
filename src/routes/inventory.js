@@ -151,6 +151,23 @@ router.patch('/:id/status', authenticate, auditLogger('update_status', 'inventor
 
 // Upload label photo
 router.post('/:id/photo', authenticate, upload.single('photo'), async (req, res) => {
+  // Helper function to safely delete uploaded file
+  const safeDeleteFile = (filePath) => {
+    try {
+      // Verify the file is in the upload directory
+      const realPath = fs.realpathSync(filePath);
+      const uploadDir = fs.realpathSync(config.uploadPath);
+      
+      if (realPath.startsWith(uploadDir)) {
+        fs.unlinkSync(realPath);
+      } else {
+        console.error('Attempted to delete file outside upload directory');
+      }
+    } catch (e) {
+      console.error('Failed to delete file:', e);
+    }
+  };
+
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No photo uploaded' });
@@ -160,7 +177,7 @@ router.post('/:id/photo', authenticate, upload.single('photo'), async (req, res)
     
     // Validate item ID
     if (isNaN(itemId)) {
-      fs.unlinkSync(req.file.path);
+      safeDeleteFile(req.file.path);
       return res.status(400).json({ error: 'Invalid item ID' });
     }
     
@@ -168,7 +185,7 @@ router.post('/:id/photo', authenticate, upload.single('photo'), async (req, res)
     const item = await InventoryItem.findById(itemId);
     if (!item) {
       // Delete uploaded file
-      fs.unlinkSync(req.file.path);
+      safeDeleteFile(req.file.path);
       return res.status(404).json({ error: 'Inventory item not found' });
     }
 
@@ -194,11 +211,7 @@ router.post('/:id/photo', authenticate, upload.single('photo'), async (req, res)
   } catch (error) {
     console.error('Upload photo error:', error);
     if (req.file && req.file.path) {
-      try {
-        fs.unlinkSync(req.file.path);
-      } catch (e) {
-        console.error('Failed to delete file:', e);
-      }
+      safeDeleteFile(req.file.path);
     }
     res.status(500).json({ error: 'Failed to upload photo' });
   }

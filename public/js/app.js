@@ -288,7 +288,10 @@ async function scanItem(formData) {
 async function exportInventory() {
     try {
         const status = document.getElementById('filter-status').value;
-        const query = status ? `?status=${status}` : '';
+        // Sanitize status parameter to prevent injection
+        const allowedStatuses = ['', 'in_stock', 'shipped', 'expired', 'damaged'];
+        const safeStatus = allowedStatuses.includes(status) ? status : '';
+        const query = safeStatus ? `?status=${encodeURIComponent(safeStatus)}` : '';
         
         window.location.href = `${API_BASE}/export/inventory${query}`;
     } catch (error) {
