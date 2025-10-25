@@ -1,144 +1,48 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Inventory Expiry Tracker</title>
-    <link rel="stylesheet" href="/css/style.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Inventory Expiry Tracker</title>
+  <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
-    <div id="app">
-        <!-- Login Screen -->
-        <div id="login-screen" class="screen">
-            <div class="container">
-                <h1>Inventory Expiry Tracker</h1>
-                <div class="card">
-                    <h2>Login</h2>
-                    <form id="login-form">
-                        <div class="form-group">
-                            <label for="username">Username</label>
-                            <input type="text" id="username" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="password">Password</label>
-                            <input type="password" id="password" required>
-                        </div>
-                        <button type="submit" class="btn btn-primary">Login</button>
-                        <div id="login-error" class="error"></div>
-                    </form>
-                </div>
-            </div>
-        </div>
-
-        <!-- Main App Screen -->
-        <div id="main-screen" class="screen" style="display: none;">
-            <nav class="navbar">
-                <div class="nav-brand">Inventory Tracker</div>
-                <div class="nav-user">
-                    <span id="user-name"></span>
-                    <button id="logout-btn" class="btn btn-small">Logout</button>
-                </div>
-            </nav>
-
-            <div class="container">
-                <div class="tabs">
-                    <button class="tab-btn active" data-tab="scan">Scan</button>
-                    <button class="tab-btn" data-tab="inventory">Inventory</button>
-                    <button class="tab-btn" data-tab="batches">Batches</button>
-                    <button class="tab-btn" data-tab="products">Products</button>
-                    <button class="tab-btn admin-only" data-tab="audit">Audit Logs</button>
-                </div>
-
-                <!-- Scan Tab -->
-                <div id="scan-tab" class="tab-content active">
-                    <div class="card">
-                        <h2>Scan Item</h2>
-                        <div class="scanner-section">
-                            <button id="start-camera" class="btn btn-primary">Start Camera</button>
-                            <video id="scanner-video" style="display: none; width: 100%; max-width: 500px;"></video>
-                            <div id="scanner-result"></div>
-                        </div>
-                        
-                        <form id="scan-form">
-                            <div class="form-group">
-                                <label for="scan-barcode">Barcode</label>
-                                <input type="text" id="scan-barcode" placeholder="Enter or scan barcode">
-                            </div>
-                            <div class="form-group">
-                                <label for="scan-qr">QR Code</label>
-                                <input type="text" id="scan-qr" placeholder="Enter or scan QR code">
-                            </div>
-                            <div class="form-group">
-                                <label for="scan-batch">Batch ID</label>
-                                <input type="number" id="scan-batch" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="scan-location">Location</label>
-                                <input type="text" id="scan-location">
-                            </div>
-                            <div class="form-group">
-                                <label for="scan-notes">Notes</label>
-                                <textarea id="scan-notes" rows="3"></textarea>
-                            </div>
-                            <button type="submit" class="btn btn-primary">Add to Inventory</button>
-                        </form>
-                    </div>
-                </div>
-
-                <!-- Inventory Tab -->
-                <div id="inventory-tab" class="tab-content">
-                    <div class="card">
-                        <h2>Inventory Items</h2>
-                        <div class="actions">
-                            <button id="export-csv" class="btn btn-secondary">Export CSV</button>
-                            <select id="filter-status">
-                                <option value="">All Status</option>
-                                <option value="in_stock">In Stock</option>
-                                <option value="shipped">Shipped</option>
-                                <option value="expired">Expired</option>
-                                <option value="damaged">Damaged</option>
-                            </select>
-                        </div>
-                        <div id="inventory-list" class="list"></div>
-                    </div>
-                </div>
-
-                <!-- Batches Tab -->
-                <div id="batches-tab" class="tab-content">
-                    <div class="card">
-                        <h2>Batches</h2>
-                        <button id="update-expired-btn" class="btn btn-secondary">Update Expired Status</button>
-                        <div id="batches-list" class="list"></div>
-                    </div>
-                </div>
-
-                <!-- Products Tab -->
-                <div id="products-tab" class="tab-content">
-                    <div class="card">
-                        <h2>Products</h2>
-                        <div class="form-group">
-                            <label for="lookup-gtin">Lookup by GTIN</label>
-                            <div style="display: flex; gap: 10px;">
-                                <input type="text" id="lookup-gtin" placeholder="Enter GTIN/Barcode">
-                                <button id="lookup-btn" class="btn btn-primary">Lookup</button>
-                            </div>
-                        </div>
-                        <div id="lookup-result"></div>
-                        <div id="products-list" class="list"></div>
-                    </div>
-                </div>
-
-                <!-- Audit Tab -->
-                <div id="audit-tab" class="tab-content">
-                    <div class="card">
-                        <h2>Audit Logs</h2>
-                        <div id="audit-list" class="list"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
+  <header class="site-header">
+    <div class="container">
+      <h1 class="brand">Inventory Expiry Tracker</h1>
+      <nav class="nav">
+        <a class="btn" href="/login">Iniciar sesión</a>
+        <a class="btn btn-primary" href="/register">Registrarse</a>
+      </nav>
     </div>
+  </header>
 
-    <script src="/js/app.js"></script>
+  <main class="container">
+    <section class="hero">
+      <h2>Mantén tus productos al día</h2>
+      <p>Escanea códigos, registra fechas de caducidad y recibe notificaciones.</p>
+      <div class="actions">
+        <a class="cta" href="/register">Comenzar</a>
+        <a class="secondary" href="/login">Ya tengo cuenta</a>
+      </div>
+    </section>
+
+    <section class="features">
+      <div class="card">
+        <h3>Registro sencillo</h3>
+        <p>Crea una cuenta de manager o worker rápidamente.</p>
+      </div>
+      <div class="card">
+        <h3>Interfaz clara</h3>
+        <p>Diseño limpio para enfocarte en inventario y caducidades.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">Proyecto de ejemplo — estudiante: ¡sigue aprendiendo!</div>
+  </footer>
+
+  <script src="/js/main.js"></script>
 </body>
 </html>
