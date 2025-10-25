@@ -1,14 +1,12 @@
 /**
  * server.js
- * Versión actualizada: añade registro, login, ruta JSON /api/auth/login, y creación por defecto de cuentas:
- * - admin / admin (rol: admin)
- * - manager / manager (rol: manager)
- * - worker  / worker  (rol: worker)
+ * Versión corregida: usa bcryptjs para compatibilidad en Docker,
+ * mantiene endpoints /register, /login y /api/auth/login.
  */
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs'); // <- CORRECCIÓN: usar bcryptjs
 const session = require('express-session');
 
 const app = express();
@@ -134,7 +132,7 @@ app.post('/login', (req, res) => {
   return res.redirect('/dashboard');
 });
 
-// Ruta API JSON para login desde fetch/AJAX (si el frontend usa /api/auth/login)
+// Ruta API JSON para login desde fetch/AJAX
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body;
   const users = readUsers();
