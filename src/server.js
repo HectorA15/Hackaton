@@ -1,11 +1,9 @@
 /**
  * server.js
- * Versión propuesta: añade registro, login y creación por defecto de cuentas:
+ * Versión actualizada: añade registro, login, ruta JSON /api/auth/login, y creación por defecto de cuentas:
  * - admin / admin (rol: admin)
  * - manager / manager (rol: manager)
  * - worker  / worker  (rol: worker)
- *
- * Nota: este archivo sobrescribe o reemplaza el src/server.js existente.
  */
 const express = require('express');
 const path = require('path');
@@ -117,7 +115,7 @@ app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'login.html'));
 });
 
-// Procesar login
+// Procesar login (form submit tradicional)
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
   const users = readUsers();
@@ -134,6 +132,20 @@ app.post('/login', (req, res) => {
   // Guardar sesión mínima
   req.session.user = { username: user.username, role: user.role };
   return res.redirect('/dashboard');
+});
+
+// Ruta API JSON para login desde fetch/AJAX (si el frontend usa /api/auth/login)
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body;
+  const users = readUsers();
+  const user = users.find(u => u.username === username);
+  if (!user) return res.status(401).json({ success: false, message: 'Usuario o contraseña incorrectos.' });
+
+  const ok = bcrypt.compareSync(password, user.password);
+  if (!ok) return res.status(401).json({ success: false, message: 'Usuario o contraseña incorrectos.' });
+
+  req.session.user = { username: user.username, role: user.role };
+  return res.json({ success: true, redirect: '/dashboard' });
 });
 
 // Dashboard simple (muestra información según rol)
