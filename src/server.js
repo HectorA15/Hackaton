@@ -10,7 +10,15 @@ const app = express();
 
 // Security middleware
 app.use(helmet({
-  contentSecurityPolicy: false, // Allow inline scripts for simplicity
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'"],
+    }
+  }
 }));
 app.use(cors());
 
@@ -21,13 +29,19 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
+// Static file rate limiting
+const staticLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200
+});
+
 // Body parsing middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Static files
 app.use(express.static(path.join(__dirname, '../public')));
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.use('/uploads', staticLimiter, express.static(path.join(__dirname, '../uploads')));
 
 // API routes
 app.use('/api/auth', require('./routes/auth'));
@@ -44,7 +58,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Serve index.html for all other routes (SPA support)
-app.get('*', (req, res) => {
+app.get('*', staticLimiter, (req, res) => {
   res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 

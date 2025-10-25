@@ -12,6 +12,12 @@ const config = require('../config');
  */
 async function fetchProductByGTIN(gtin) {
   try {
+    // Validate GTIN format (8, 12, 13, or 14 digits)
+    if (!/^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/.test(gtin)) {
+      console.error('Invalid GTIN format');
+      return null;
+    }
+
     // Example using Open Food Facts API
     const response = await axios.get(
       `https://world.openfoodfacts.org/api/v0/product/${gtin}.json`,

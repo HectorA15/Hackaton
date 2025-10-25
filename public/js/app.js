@@ -37,6 +37,14 @@ async function apiRequest(endpoint, options = {}) {
     return data;
 }
 
+// Escape HTML to prevent XSS
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 function showScreen(screenId) {
     document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
     document.getElementById(screenId).style.display = 'block';
@@ -133,13 +141,13 @@ async function loadInventory(status = '') {
 
         listEl.innerHTML = items.map(item => `
             <div class="list-item ${item.is_expired ? 'expired' : ''} ${item.priority_level >= 2 ? 'priority-high' : ''}">
-                <h3>${item.product_name}</h3>
-                <p><strong>GTIN:</strong> ${item.gtin || 'N/A'}</p>
-                <p><strong>Batch:</strong> ${item.batch_number}</p>
-                <p><strong>Expiry Date:</strong> ${item.expiry_date}</p>
-                <p><strong>Location:</strong> ${item.location || 'N/A'}</p>
-                <p><strong>Barcode:</strong> ${item.barcode || 'N/A'}</p>
-                <span class="status ${item.status}">${item.status}</span>
+                <h3>${escapeHtml(item.product_name)}</h3>
+                <p><strong>GTIN:</strong> ${escapeHtml(item.gtin || 'N/A')}</p>
+                <p><strong>Batch:</strong> ${escapeHtml(item.batch_number)}</p>
+                <p><strong>Expiry Date:</strong> ${escapeHtml(item.expiry_date)}</p>
+                <p><strong>Location:</strong> ${escapeHtml(item.location || 'N/A')}</p>
+                <p><strong>Barcode:</strong> ${escapeHtml(item.barcode || 'N/A')}</p>
+                <span class="status ${item.status}">${escapeHtml(item.status)}</span>
                 ${item.is_expired ? '<span class="status expired">EXPIRED</span>' : ''}
             </div>
         `).join('');
@@ -163,13 +171,13 @@ async function loadBatches() {
 
         listEl.innerHTML = batches.map(batch => `
             <div class="list-item ${batch.is_expired ? 'expired' : ''} ${batch.priority_level >= 2 ? 'priority-high' : ''}">
-                <h3>${batch.product_name}</h3>
-                <p><strong>Batch Number:</strong> ${batch.batch_number}</p>
-                <p><strong>Expiry Date:</strong> ${batch.expiry_date}</p>
-                <p><strong>Manufacturing Date:</strong> ${batch.manufacturing_date || 'N/A'}</p>
-                <p><strong>Quantity:</strong> ${batch.quantity || 0}</p>
-                <p><strong>Items in Stock:</strong> ${batch.item_count || 0}</p>
-                <p><strong>Priority Level:</strong> ${batch.priority_level}</p>
+                <h3>${escapeHtml(batch.product_name)}</h3>
+                <p><strong>Batch Number:</strong> ${escapeHtml(batch.batch_number)}</p>
+                <p><strong>Expiry Date:</strong> ${escapeHtml(batch.expiry_date)}</p>
+                <p><strong>Manufacturing Date:</strong> ${escapeHtml(batch.manufacturing_date || 'N/A')}</p>
+                <p><strong>Quantity:</strong> ${escapeHtml(String(batch.quantity || 0))}</p>
+                <p><strong>Items in Stock:</strong> ${escapeHtml(String(batch.item_count || 0))}</p>
+                <p><strong>Priority Level:</strong> ${escapeHtml(String(batch.priority_level))}</p>
                 ${batch.is_expired ? '<span class="status expired">EXPIRED</span>' : ''}
             </div>
         `).join('');
@@ -193,11 +201,11 @@ async function loadProducts() {
 
         listEl.innerHTML = products.map(product => `
             <div class="list-item">
-                <h3>${product.name}</h3>
-                <p><strong>GTIN:</strong> ${product.gtin || 'N/A'}</p>
-                <p><strong>Manufacturer:</strong> ${product.manufacturer || 'N/A'}</p>
-                <p><strong>Category:</strong> ${product.category || 'N/A'}</p>
-                <p>${product.description || ''}</p>
+                <h3>${escapeHtml(product.name)}</h3>
+                <p><strong>GTIN:</strong> ${escapeHtml(product.gtin || 'N/A')}</p>
+                <p><strong>Manufacturer:</strong> ${escapeHtml(product.manufacturer || 'N/A')}</p>
+                <p><strong>Category:</strong> ${escapeHtml(product.category || 'N/A')}</p>
+                <p>${escapeHtml(product.description || '')}</p>
             </div>
         `).join('');
     } catch (error) {
@@ -220,11 +228,11 @@ async function loadAuditLogs() {
 
         listEl.innerHTML = logs.map(log => `
             <div class="list-item">
-                <p><strong>Action:</strong> ${log.action}</p>
-                <p><strong>User:</strong> ${log.username || 'System'}</p>
-                <p><strong>Entity:</strong> ${log.entity_type} (ID: ${log.entity_id || 'N/A'})</p>
-                <p><strong>Date:</strong> ${new Date(log.created_at).toLocaleString()}</p>
-                <p><strong>IP:</strong> ${log.ip_address || 'N/A'}</p>
+                <p><strong>Action:</strong> ${escapeHtml(log.action)}</p>
+                <p><strong>User:</strong> ${escapeHtml(log.username || 'System')}</p>
+                <p><strong>Entity:</strong> ${escapeHtml(log.entity_type)} (ID: ${escapeHtml(String(log.entity_id || 'N/A'))})</p>
+                <p><strong>Date:</strong> ${escapeHtml(new Date(log.created_at).toLocaleString())}</p>
+                <p><strong>IP:</strong> ${escapeHtml(log.ip_address || 'N/A')}</p>
             </div>
         `).join('');
     } catch (error) {
@@ -242,12 +250,12 @@ async function lookupProduct(gtin) {
         
         resultEl.innerHTML = `
             <div class="list-item">
-                <h3>${data.product.name}</h3>
-                <p><strong>Source:</strong> ${data.source}</p>
-                <p><strong>GTIN:</strong> ${data.product.gtin || 'N/A'}</p>
-                <p><strong>Manufacturer:</strong> ${data.product.manufacturer || 'N/A'}</p>
-                <p><strong>Category:</strong> ${data.product.category || 'N/A'}</p>
-                <p>${data.product.description || ''}</p>
+                <h3>${escapeHtml(data.product.name)}</h3>
+                <p><strong>Source:</strong> ${escapeHtml(data.source)}</p>
+                <p><strong>GTIN:</strong> ${escapeHtml(data.product.gtin || 'N/A')}</p>
+                <p><strong>Manufacturer:</strong> ${escapeHtml(data.product.manufacturer || 'N/A')}</p>
+                <p><strong>Category:</strong> ${escapeHtml(data.product.category || 'N/A')}</p>
+                <p>${escapeHtml(data.product.description || '')}</p>
             </div>
         `;
 

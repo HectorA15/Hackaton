@@ -156,7 +156,13 @@ router.post('/:id/photo', authenticate, upload.single('photo'), async (req, res)
       return res.status(400).json({ error: 'No photo uploaded' });
     }
 
-    const itemId = req.params.id;
+    const itemId = parseInt(req.params.id);
+    
+    // Validate item ID
+    if (isNaN(itemId)) {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: 'Invalid item ID' });
+    }
     
     // Verify item exists
     const item = await InventoryItem.findById(itemId);
@@ -166,25 +172,33 @@ router.post('/:id/photo', authenticate, upload.single('photo'), async (req, res)
       return res.status(404).json({ error: 'Inventory item not found' });
     }
 
+    // Sanitize file path to prevent directory traversal
+    const fileName = path.basename(req.file.filename);
+    const safePath = path.join(config.uploadPath, fileName);
+
     // Save photo record
     return new Promise((resolve, reject) => {
       const sql = 'INSERT INTO label_photos (inventory_item_id, file_path, uploaded_by) VALUES (?, ?, ?)';
-      db.run(sql, [itemId, req.file.path, req.user.id], function(err) {
+      db.run(sql, [itemId, safePath, req.user.id], function(err) {
         if (err) {
           reject(err);
         } else {
           res.json({
             message: 'Photo uploaded successfully',
             photoId: this.lastID,
-            path: req.file.path
+            path: safePath
           });
         }
       });
     });
   } catch (error) {
     console.error('Upload photo error:', error);
-    if (req.file) {
-      fs.unlinkSync(req.file.path);
+    if (req.file && req.file.path) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (e) {
+        console.error('Failed to delete file:', e);
+      }
     }
     res.status(500).json({ error: 'Failed to upload photo' });
   }
