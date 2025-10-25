@@ -1,5 +1,5 @@
 const express = require('express');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
 const { exportInventoryToCSV } = require('../utils/csvExport');
 
 const router = express.Router();

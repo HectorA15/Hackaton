@@ -75,7 +75,7 @@ class InventoryItem {
     });
   }
 
-  static updateStatus(id, status, userId) {
+  static updateStatus(id, status, _userId) {
     return new Promise((resolve, reject) => {
       const sql = 'UPDATE inventory_items SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
       db.run(sql, [status, id], function(err) {
