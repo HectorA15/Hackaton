@@ -1,11 +1,9 @@
-// dashboard.js - carga productos, muestra tabla, abre scanner con ZXing y agrega producto detectado
 (async function(){
   const api = '/api/products';
   const welcomeEl = document.getElementById('welcome');
   const tableBody = document.querySelector('#productsTable tbody');
   const summary = document.getElementById('summary');
 
-  // Funciones util
   function daysUntil(dateStr){
     const today = new Date();
     const d = new Date(dateStr + 'T23:59:59');
@@ -52,7 +50,6 @@
     }
   }
 
-  // event delegation for actions
   tableBody.addEventListener('click', async (e) => {
     const btn = e.target.closest('button');
     if(!btn) return;
@@ -63,56 +60,122 @@
       await fetch(`/api/products/${id}`, { method:'DELETE' });
       await loadProducts();
     } else if(action === 'view'){
-      // simple alert, puedes crear modal con más info
       const r = await fetch(`/api/products/${id}`);
       const p = await r.json();
       alert(`Nombre: ${p.name}\nSKU: ${p.sku}\nLote: ${p.lot}\nCaducidad: ${p.expiry}\nCantidad: ${p.qty}`);
     }
   });
 
-  // scanner modal logic using ZXing Browser
   let codeReader;
   let selectedDeviceId;
+  let currentStream;
   const scannerModal = document.getElementById('scannerModal');
   const preview = document.getElementById('preview');
-  document.getElementById('openScanner').addEventListener('click', async () => {
+  const cameraSelect = document.getElementById('cameraSelect');
+
+  preview.setAttribute('autoplay','');
+  preview.setAttribute('playsinline','');
+  preview.muted = true;
+
+  async function enumerateCameras() {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videos = devices.filter(d => d.kind === 'videoinput');
+    cameraSelect.innerHTML = '';
+    videos.forEach((d, i) => {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || `Cámara ${i+1}`;
+      cameraSelect.appendChild(opt);
+    });
+    const back = videos.find(d => /back|rear|environment/i.test(d.label));
+    selectedDeviceId = back ? back.deviceId : (videos[videos.length - 1]?.deviceId);
+    if (selectedDeviceId) cameraSelect.value = selectedDeviceId;
+  }
+
+  cameraSelect?.addEventListener('change', async () => {
+    selectedDeviceId = cameraSelect.value;
+    await restartScanner();
+  });
+
+  async function startScanner() {
     scannerModal.classList.remove('hidden');
     scannerModal.setAttribute('aria-hidden','false');
+    await enumerateCameras();
 
-    // use ZXing's BrowserMultiFormatReader
-    codeReader = new ZXing.BrowserMultiFormatReader();
     try {
-      const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
-      selectedDeviceId = devices.length ? devices[0].deviceId : undefined;
+      if (window.ZXing) {
+        codeReader = new ZXing.BrowserMultiFormatReader();
+        await codeReader.decodeFromVideoDevice(selectedDeviceId, preview, (result, err) => {
+          if (preview.paused) { preview.play().catch(()=>{}); }
+          if (result) {
+            const text = result.getText();
+            handleScannedCode(text);
+            stopScanner();
+          }
+        });
+        preview.addEventListener('canplay', () => {
+          if (preview.paused) { preview.play().catch(()=>{}); }
+        }, { once:true });
+        return;
+      }
+    } catch (err) {
+      console.error('ZXing error:', err);
+    }
+
+    await startGetUserMedia();
+  }
+
+  async function startGetUserMedia() {
+    try {
+      const constraints = selectedDeviceId
+        ? { video: { deviceId: { exact: selectedDeviceId } } }
+        : { video: { facingMode: { ideal: 'environment' } } };
+      currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+      preview.srcObject = currentStream;
+      await preview.play().catch(()=>{});
+    } catch (err) {
+      console.error('getUserMedia error:', err);
+      alert('No se pudo acceder a la cámara. Revisa permisos del navegador/Windows o si otra app la está usando.');
+      stopScanner();
+    }
+  }
+
+  async function restartScanner(){
+    if (codeReader) { try { codeReader.reset(); } catch {} codeReader = null; }
+    if (currentStream) { try { currentStream.getTracks().forEach(t => t.stop()); } catch {} currentStream = null; }
+
+    if (window.ZXing) {
+      codeReader = new ZXing.BrowserMultiFormatReader();
       await codeReader.decodeFromVideoDevice(selectedDeviceId, preview, (result, err) => {
+        if (preview.paused) { preview.play().catch(()=>{}); }
         if (result) {
-          // resultado leído
           const text = result.getText();
-          // si quieres buscar producto por sku o crear nuevo:
           handleScannedCode(text);
-          // stop
-          codeReader.reset();
-          scannerModal.classList.add('hidden');
-          scannerModal.setAttribute('aria-hidden','true');
-        }
-        if (err && !(err.name === 'NotFoundException')) {
-          console.error(err);
+          stopScanner();
         }
       });
-    } catch(err){
-      console.error('Error cámara:', err);
-      alert('No se pudo acceder a la cámara. Revisa permisos.');
-      scannerModal.classList.add('hidden');
+    } else {
+      await startGetUserMedia();
     }
-  });
+  }
 
-  document.getElementById('closeScanner').addEventListener('click', () => {
-    if (codeReader) codeReader.reset();
+  function stopScanner() {
+    if (codeReader) {
+      try { codeReader.reset(); } catch {}
+      codeReader = null;
+    }
+    if (currentStream) {
+      try { currentStream.getTracks().forEach(t => t.stop()); } catch {}
+      currentStream = null;
+    }
     scannerModal.classList.add('hidden');
-  });
+    scannerModal.setAttribute('aria-hidden','true');
+  }
+
+  document.getElementById('openScanner').addEventListener('click', startScanner);
+  document.getElementById('closeScanner').addEventListener('click', stopScanner);
 
   async function handleScannedCode(code){
-    // ejemplo: buscar producto por sku
     try {
       const res = await fetch(`/api/products?sku=${encodeURIComponent(code)}`);
       const list = await res.json();
@@ -120,7 +183,6 @@
         const p = list[0];
         alert(`Producto encontrado: ${p.name}\nCaduca en ${daysUntil(p.expiry)} días`);
       } else {
-        // si no existe, abrir modal de nuevo producto con sku autocompletado
         openProductModal({ sku: code });
       }
     } catch(e){
@@ -128,13 +190,10 @@
     }
   }
 
-  // nuevo producto modal
   const productModal = document.getElementById('productModal');
   const productForm = document.getElementById('productForm');
   document.getElementById('newProduct').addEventListener('click', () => openProductModal());
-  document.getElementById('cancelProduct').addEventListener('click', () => {
-    productModal.classList.add('hidden');
-  });
+  document.getElementById('cancelProduct').addEventListener('click', () => { productModal.classList.add('hidden'); });
 
   function openProductModal(prefill={}){
     productModal.classList.remove('hidden');
@@ -160,18 +219,13 @@
     await loadProducts();
   });
 
-  // inicializar
-  // poner nombre de usuario si lo provee el HTML en alguna variable o por fetch a /session
-  // simple: pedir al servidor la página con sesión (tu servidor ya pone req.session.user)
   try {
-    // Pedir al servidor quién está en sesión
     const s = await fetch('/api/session');
     if (s.ok){
       const user = await s.json();
       welcomeEl.textContent = `Bienvenido ${user.username}`;
     }
-  } catch(e){/*ignorar*/}
+  } catch(e){}
 
   await loadProducts();
-
 })();
