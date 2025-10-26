@@ -184,3 +184,66 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en http://localhost:${PORT}`);
 });
+
+// --- Productos: persistencia simple en src/db/products.json
+const PRODUCTS_FILE = path.join(DB_DIR, 'products.json');
+
+function ensureProductsFile(){
+  if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true }); // ya lo hace ensureUsersFile, pero aseguramos
+  if (!fs.existsSync(PRODUCTS_FILE)){
+    const sample = [
+      { id: 'p1', name: 'Leche 1L', sku: 'LEC001', lot: 'L001', expiry: new Date(Date.now() + 10*24*3600*1000).toISOString().slice(0,10), qty: 12 },
+      { id: 'p2', name: 'Yogurt', sku: 'YOG123', lot: 'A12', expiry: new Date(Date.now() + 3*24*3600*1000).toISOString().slice(0,10), qty: 6 }
+    ];
+    fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(sample, null, 2), 'utf8');
+  }
+}
+function readProducts(){
+  try{ return JSON.parse(fs.readFileSync(PRODUCTS_FILE,'utf8')); }catch(e){return []}
+}
+function writeProducts(list){ fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(list, null, 2), 'utf8'); }
+ensureProductsFile();
+
+// Endpoint: obtener sesión actual (cliente usa /api/session)
+app.get('/api/session', (req, res) => {
+  if (req.session && req.session.user) return res.json(req.session.user);
+  return res.status(401).json({ error: 'no session' });
+});
+
+// GET /api/products  (opcional query ?sku=)
+app.get('/api/products', (req, res) => {
+  const list = readProducts();
+  const { sku } = req.query;
+  if (sku) {
+    const filtered = list.filter(p => p.sku === sku);
+    return res.json(filtered);
+  }
+  res.json(list);
+});
+
+// GET single
+app.get('/api/products/:id', (req, res) => {
+  const p = readProducts().find(x => x.id === req.params.id);
+  if (!p) return res.status(404).send('Not found');
+  res.json(p);
+});
+
+// POST create
+const { randomUUID } = require('crypto');
+app.post('/api/products', (req, res) => {
+  const { name, sku, lot, expiry, qty } = req.body;
+  if (!name || !expiry) return res.status(400).send('Faltan campos');
+  const list = readProducts();
+  const newP = { id: randomUUID(), name, sku, lot, expiry, qty: Number(qty || 0) };
+  list.push(newP);
+  writeProducts(list);
+  res.status(201).json(newP);
+});
+
+// DELETE
+app.delete('/api/products/:id', (req, res) => {
+  let list = readProducts();
+  list = list.filter(p => p.id !== req.params.id);
+  writeProducts(list);
+  res.status(204).send();
+});
