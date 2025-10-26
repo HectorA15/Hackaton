@@ -1,4 +1,4 @@
-(async function(){
+async function(){
   const api = '/api/products';
   const welcomeEl = document.getElementById('welcome');
   const tableBody = document.querySelector('#productsTable tbody');
@@ -50,34 +50,59 @@
     }
   }
 
-  tableBody.addEventListener('click', async (e) => {
-    const btn = e.target.closest('button');
-    if(!btn) return;
-    const id = btn.dataset.id;
-    const action = btn.dataset.action;
-    if(action === 'del'){
-      if(!confirm('Eliminar producto?')) return;
-      await fetch(`/api/products/${id}`, { method:'DELETE' });
-      await loadProducts();
-    } else if(action === 'view'){
-      const r = await fetch(`/api/products/${id}`);
-      const p = await r.json();
-      alert(`Nombre: ${p.name}\nSKU: ${p.sku}\nLote: ${p.lot}\nCaducidad: ${p.expiry}\nCantidad: ${p.qty}`);
-    }
-  });
-
+  // ---------- Scanner mejorado (ROI + BarcodeDetector/ZXing)
   let codeReader;
   let selectedDeviceId;
   let currentStream;
+  let stopLoop = () => {};
   const scannerModal = document.getElementById('scannerModal');
   const preview = document.getElementById('preview');
   const cameraSelect = document.getElementById('cameraSelect');
+  const scanMode = document.getElementById('scanMode');
+  const scanFrameEl = document.querySelector('.scan-frame');
+  const engineLabel = document.getElementById('engineLabel');
+  const hintLabel = document.getElementById('hintLabel');
 
   preview.setAttribute('autoplay','');
   preview.setAttribute('playsinline','');
   preview.muted = true;
 
-  async function enumerateCameras() {
+  const nativeFormats = {
+    auto: ['qr_code','ean_13','code_128','code_39','upc_a','upc_e','ean_8','itf'],
+    qr:   ['qr_code'],
+    bar:  ['ean_13','code_128','code_39','upc_a','upc_e','ean_8','itf']
+  };
+  const zxingFormats = {
+    auto: ['QR_CODE','EAN_13','CODE_128','CODE_39','UPC_A','UPC_E','EAN_8','ITF'],
+    qr:   ['QR_CODE'],
+    bar:  ['EAN_13','CODE_128','CODE_39','UPC_A','UPC_E','EAN_8','ITF']
+  };
+
+  function ZXING_List(formats){
+    if (!window.ZXing) return [];
+    const out = [];
+    const F = window.ZXing.BarcodeFormat;
+    formats.forEach(f => { if (F[f]) out.push(F[f]); });
+    return out;
+  }
+
+  function applyOverlayClass(){
+    if (!scanFrameEl) return;
+    scanFrameEl.classList.remove('auto','qr','bar');
+    const m = scanMode?.value || 'auto';
+    scanFrameEl.classList.add(m);
+    if (hintLabel) {
+      hintLabel.textContent = m === 'qr'
+        ? 'Modo QR: centra el QR y acércalo para que llene el recuadro.'
+        : m === 'bar'
+          ? 'Modo barras: alinea el código horizontalmente dentro del recuadro.'
+          : 'Modo auto: coloca el código dentro del recuadro y acércalo un poco más.';
+    }
+  }
+
+  async function enumerateCamerasWithPermission() {
+    const test = await navigator.mediaDevices.getUserMedia({ video: true });
+    test.getTracks().forEach(t => t.stop());
     const devices = await navigator.mediaDevices.enumerateDevices();
     const videos = devices.filter(d => d.kind === 'videoinput');
     cameraSelect.innerHTML = '';
@@ -92,78 +117,182 @@
     if (selectedDeviceId) cameraSelect.value = selectedDeviceId;
   }
 
-  cameraSelect?.addEventListener('change', async () => {
-    selectedDeviceId = cameraSelect.value;
-    await restartScanner();
-  });
+  function getConstraints() {
+    const base = selectedDeviceId
+      ? { deviceId: { exact: selectedDeviceId } }
+      : { facingMode: { ideal: 'environment' } };
+    return {
+      video: {
+        ...base,
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        advanced: [{ focusMode: 'continuous' }]
+      }
+    };
+  }
+
+  async function openStream() {
+    if (currentStream) {
+      try { currentStream.getTracks().forEach(t => t.stop()); } catch {}
+      currentStream = null;
+    }
+    currentStream = await navigator.mediaDevices.getUserMedia(getConstraints());
+    preview.srcObject = currentStream;
+    try {
+      const track = currentStream.getVideoTracks()[0];
+      const caps = track.getCapabilities?.() || {};
+      const adj = {};
+      if (caps.focusMode?.includes?.('continuous')) adj.focusMode = 'continuous';
+      if (Object.keys(adj).length) await track.applyConstraints({ advanced: [adj] });
+    } catch {}
+    await preview.play().catch(()=>{});
+    await new Promise(r => setTimeout(r, 300));
+  }
+
+  function getRoiRect() {
+    const vw = preview.videoWidth || 1280;
+    const vh = preview.videoHeight || 720;
+    const mode = scanMode?.value || 'auto';
+    if (mode === 'qr') {
+      const size = Math.floor(Math.min(vw, vh) * 0.6);
+      const rx = Math.floor((vw - size)/2);
+      const ry = Math.floor((vh - size)/2);
+      return { rx, ry, rw: size, rh: size };
+    }
+    if (mode === 'bar') {
+      const rw = Math.floor(vw * 0.82);
+      const rh = Math.floor(vh * 0.28);
+      const rx = Math.floor((vw - rw)/2);
+      const ry = Math.floor((vh - rh)/2);
+      return { rx, ry, rw, rh };
+    }
+    const rw = Math.floor(vw * 0.70);
+    const rh = Math.floor(vh * 0.40);
+    const rx = Math.floor((vw - rw)/2);
+    const ry = Math.floor((vh - rh)/2);
+    return { rx, ry, rw, rh };
+  }
+
+  async function startNativeLoopROI() {
+    if (engineLabel) engineLabel.textContent = 'Motor: BarcodeDetector';
+    const fmts = nativeFormats[scanMode?.value] || nativeFormats.auto;
+    const detector = new window.BarcodeDetector({ formats: fmts });
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+    let attempts = 0;
+    let stopped = false;
+    stopLoop = () => { stopped = true; };
+
+    async function tick(){
+      if (stopped) return;
+      const vw = preview.videoWidth, vh = preview.videoHeight;
+      if (vw && vh) {
+        const {rx, ry, rw, rh} = getRoiRect();
+        for (const scale of [2, 3]) {
+          canvas.width = rw * scale; canvas.height = rh * scale;
+          ctx.imageSmoothingEnabled = false;
+          ctx.drawImage(preview, rx, ry, rw, rh, 0, 0, rw*scale, rh*scale);
+          try {
+            const codes = await detector.detect(canvas);
+            if (codes && codes.length) {
+              handleScannedCode(codes[0].rawValue);
+              stopScanner();
+              return;
+            }
+          } catch {}
+        }
+      }
+      attempts++;
+      if (attempts > 60) { // ~1-2s, fallback a ZXing
+        await startZXingLoopROI();
+        return;
+      }
+      requestAnimationFrame(tick);
+    }
+    tick();
+  }
+
+  async function startZXingLoopROI() {
+    if (engineLabel) engineLabel.textContent = 'Motor: ZXing';
+    if (!window.ZXing) return;
+    const hints = new Map();
+    const DT = window.ZXing.DecodeHintType;
+    hints.set(DT.POSSIBLE_FORMATS, ZXING_List(zxingFormats[scanMode?.value] || zxingFormats.auto));
+    hints.set(DT.TRY_HARDER, true);
+
+    if (codeReader) { try { codeReader.reset(); } catch {} }
+    codeReader = new window.ZXing.BrowserMultiFormatReader(hints);
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+    let stopped = false;
+    stopLoop = () => { stopped = true; try { codeReader.reset(); } catch {} };
+
+    async function tick(){
+      if (stopped) return;
+      const vw = preview.videoWidth, vh = preview.videoHeight;
+      if (vw && vh) {
+        const {rx, ry, rw, rh} = getRoiRect();
+        for (const scale of [3, 2, 1]) {
+          canvas.width = rw * scale; canvas.height = rh * scale;
+          ctx.imageSmoothingEnabled = false;
+          ctx.drawImage(preview, rx, ry, rw, rh, 0, 0, rw*scale, rh*scale);
+          try {
+            const result = await codeReader.decodeFromCanvas(canvas);
+            if (result?.getText) {
+              handleScannedCode(result.getText());
+              stopScanner();
+              return;
+            }
+          } catch {
+            // NotFound: seguir
+          }
+        }
+      }
+      setTimeout(tick, 70);
+    }
+    tick();
+  }
 
   async function startScanner() {
     scannerModal.classList.remove('hidden');
     scannerModal.setAttribute('aria-hidden','false');
-    await enumerateCameras();
-
+    applyOverlayClass();
     try {
-      if (window.ZXing) {
-        codeReader = new ZXing.BrowserMultiFormatReader();
-        await codeReader.decodeFromVideoDevice(selectedDeviceId, preview, (result, err) => {
-          if (preview.paused) { preview.play().catch(()=>{}); }
-          if (result) {
-            const text = result.getText();
-            handleScannedCode(text);
-            stopScanner();
-          }
-        });
-        preview.addEventListener('canplay', () => {
-          if (preview.paused) { preview.play().catch(()=>{}); }
-        }, { once:true });
-        return;
+      await enumerateCamerasWithPermission();
+      await openStream();
+      if ('BarcodeDetector' in window) {
+        await startNativeLoopROI();
+      } else {
+        await startZXingLoopROI();
       }
-    } catch (err) {
-      console.error('ZXing error:', err);
-    }
-
-    await startGetUserMedia();
-  }
-
-  async function startGetUserMedia() {
-    try {
-      const constraints = selectedDeviceId
-        ? { video: { deviceId: { exact: selectedDeviceId } } }
-        : { video: { facingMode: { ideal: 'environment' } } };
-      currentStream = await navigator.mediaDevices.getUserMedia(constraints);
-      preview.srcObject = currentStream;
-      await preview.play().catch(()=>{});
-    } catch (err) {
-      console.error('getUserMedia error:', err);
-      alert('No se pudo acceder a la cámara. Revisa permisos del navegador/Windows o si otra app la está usando.');
+    } catch (e) {
+      console.error('No se pudo iniciar el escáner:', e);
+      alert('No se pudo acceder a la cámara. Revisa permisos o si otra app la está usando.');
       stopScanner();
     }
   }
 
   async function restartScanner(){
-    if (codeReader) { try { codeReader.reset(); } catch {} codeReader = null; }
-    if (currentStream) { try { currentStream.getTracks().forEach(t => t.stop()); } catch {} currentStream = null; }
-
-    if (window.ZXing) {
-      codeReader = new ZXing.BrowserMultiFormatReader();
-      await codeReader.decodeFromVideoDevice(selectedDeviceId, preview, (result, err) => {
-        if (preview.paused) { preview.play().catch(()=>{}); }
-        if (result) {
-          const text = result.getText();
-          handleScannedCode(text);
-          stopScanner();
-        }
-      });
+    stopOnlyLoops();
+    applyOverlayClass();
+    await openStream();
+    if ('BarcodeDetector' in window) {
+      await startNativeLoopROI();
     } else {
-      await startGetUserMedia();
+      await startZXingLoopROI();
     }
   }
 
+  function stopOnlyLoops(){
+    try { stopLoop(); } catch {}
+    if (codeReader) { try { codeReader.reset(); } catch {} codeReader = null; }
+  }
+
   function stopScanner() {
-    if (codeReader) {
-      try { codeReader.reset(); } catch {}
-      codeReader = null;
-    }
+    stopOnlyLoops();
     if (currentStream) {
       try { currentStream.getTracks().forEach(t => t.stop()); } catch {}
       currentStream = null;
@@ -172,6 +301,8 @@
     scannerModal.setAttribute('aria-hidden','true');
   }
 
+  cameraSelect?.addEventListener('change', restartScanner);
+  scanMode?.addEventListener('change', restartScanner);
   document.getElementById('openScanner').addEventListener('click', startScanner);
   document.getElementById('closeScanner').addEventListener('click', stopScanner);
 
@@ -190,12 +321,13 @@
     }
   }
 
+  // -------- Alta de producto
   const productModal = document.getElementById('productModal');
   const productForm = document.getElementById('productForm');
   document.getElementById('newProduct').addEventListener('click', () => openProductModal());
   document.getElementById('cancelProduct').addEventListener('click', () => { productModal.classList.add('hidden'); });
 
-  function openProductModal(prefill={}){
+  function openProductModal(prefill={} as any){
     productModal.classList.remove('hidden');
     for(const k of ['name','sku','lot','expiry','qty']){
       if(prefill[k] !== undefined) productForm.elements[k].value = prefill[k];
@@ -228,4 +360,4 @@
   } catch(e){}
 
   await loadProducts();
-})();
+}();
