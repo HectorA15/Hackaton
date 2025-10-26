@@ -14,14 +14,19 @@
     .badge.ok{background:#f3fff6;color:#116630}
     .modal{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:40}
     .modal .box{background:#fff;padding:12px;border-radius:10px;max-width:920px;width:100%;max-height:90vh;overflow:auto}
-    /* Contenedor del video para poder poner overlay del ROI */
     .scan-wrap{position:relative}
     video#preview{width:100%;height:auto;border-radius:8px;background:#000}
     .hidden{display:none}
     .select{padding:8px;border-radius:6px;border:1px solid #e7eefb;background:#fff}
-    /* Ventana de escaneo (ROI) centrada con máscara alrededor */
-    .scan-frame{ position:absolute; inset:0; pointer-events:none; }
-    .scan-frame::before{ content:""; position:absolute; left:50%; top:50%; width:70%; height:40%; transform:translate(-50%,-50%); border:2px solid #2b8cff; border-radius:10px; box-shadow: 0 0 0 9999px rgba(0,0,0,0.35), 0 0 12px rgba(43,140,255,0.6) inset; }
+
+    /* Overlay ROI adaptable por modo */
+    .scan-frame{position:absolute;inset:0;pointer-events:none}
+    .scan-frame::before{content:"";position:absolute;left:50%;top:50%;border:2px solid #2b8cff;border-radius:12px;box-shadow:0 0 0 9999px rgba(0,0,0,.35), 0 0 12px rgba(43,140,255,.6) inset;transform:translate(-50%,-50%)}
+    .scan-frame.auto::before{width:70%;height:40%}
+    .scan-frame.qr::before{width:60vmin;height:60vmin;max-width:80%;max-height:80%}
+    .scan-frame.bar::before{width:88%;height:26%}
+
+    .scan-status{font-size:12px;color:#6b7380;margin-top:6px}
   </style>
 </head>
 <body>
@@ -58,25 +63,26 @@
   <!-- Modal scanner -->
   <div id="scannerModal" class="modal hidden" aria-hidden="true">
     <div class="box">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;flex-wrap:wrap">
-        <h3>Escanear código</h3>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <label>Modo
-            <select id="scanMode" class="select">
-              <option value="auto" selected>Auto</option>
-              <option value="qr">Solo QR</option>
-              <option value="bar">Solo barras</option>
-            </select>
-          </label>
-          <select id="cameraSelect" class="select"></select>
-          <button id="closeScanner" class="btn">Cerrar</button>
-        </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+        <label>Modo
+          <select id="scanMode" class="select">
+            <option value="auto" selected>Auto</option>
+            <option value="qr">Solo QR</option>
+            <option value="bar">Solo barras</option>
+          </select>
+        </label>
+        <select id="cameraSelect" class="select"></select>
+        <button id="closeScanner" class="btn">Cerrar</button>
       </div>
+
       <div class="scan-wrap">
         <video id="preview" autoplay playsinline muted></video>
-        <div class="scan-frame" aria-hidden="true"></div>
+        <div id="scanFrame" class="scan-frame auto" aria-hidden="true"></div>
       </div>
-      <p style="margin-top:8px;color:var(--muted)">Alinea el código dentro del recuadro para mejores resultados.</p>
+      <div class="scan-status">
+        <span id="engineLabel">Motor: —</span> ·
+        <span id="hintLabel">Tips: coloca el código dentro del recuadro y acércalo.</span>
+      </div>
     </div>
   </div>
 
