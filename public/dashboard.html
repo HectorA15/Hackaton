@@ -14,9 +14,14 @@
     .badge.ok{background:#f3fff6;color:#116630}
     .modal{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:40}
     .modal .box{background:#fff;padding:12px;border-radius:10px;max-width:920px;width:100%;max-height:90vh;overflow:auto}
+    /* Contenedor del video para poder poner overlay del ROI */
+    .scan-wrap{position:relative}
     video#preview{width:100%;height:auto;border-radius:8px;background:#000}
     .hidden{display:none}
     .select{padding:8px;border-radius:6px;border:1px solid #e7eefb;background:#fff}
+    /* Ventana de escaneo (ROI) centrada con máscara alrededor */
+    .scan-frame{ position:absolute; inset:0; pointer-events:none; }
+    .scan-frame::before{ content:""; position:absolute; left:50%; top:50%; width:70%; height:40%; transform:translate(-50%,-50%); border:2px solid #2b8cff; border-radius:10px; box-shadow: 0 0 0 9999px rgba(0,0,0,0.35), 0 0 12px rgba(43,140,255,0.6) inset; }
   </style>
 </head>
 <body>
@@ -55,37 +60,28 @@
     <div class="box">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;flex-wrap:wrap">
         <h3>Escanear código</h3>
-        <div style="display:flex;gap:8px;align-items:center">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <label>Modo
+            <select id="scanMode" class="select">
+              <option value="auto" selected>Auto</option>
+              <option value="qr">Solo QR</option>
+              <option value="bar">Solo barras</option>
+            </select>
+          </label>
           <select id="cameraSelect" class="select"></select>
           <button id="closeScanner" class="btn">Cerrar</button>
         </div>
       </div>
-      <video id="preview" autoplay playsinline muted></video>
-      <p style="margin-top:8px;color:var(--muted)">Apunta un código de barras o QR hacia la cámara.</p>
+      <div class="scan-wrap">
+        <video id="preview" autoplay playsinline muted></video>
+        <div class="scan-frame" aria-hidden="true"></div>
+      </div>
+      <p style="margin-top:8px;color:var(--muted)">Alinea el código dentro del recuadro para mejores resultados.</p>
     </div>
   </div>
 
-  <!-- Modal nuevo producto -->
-  <div id="productModal" class="modal hidden">
-    <div class="box">
-      <h3>Nuevo producto</h3>
-      <form id="productForm">
-        <label>Nombre<br><input name="name" required/></label>
-        <label>SKU / Código<br><input name="sku" required/></label>
-        <label>Lote<br><input name="lot"/></label>
-        <label>Fecha de caducidad<br><input type="date" name="expiry" required/></label>
-        <label>Cantidad<br><input type="number" name="qty" value="1" min="0" required/></label>
-        <div style="margin-top:10px">
-          <button type="submit" class="btn btn-primary">Guardar</button>
-          <button type="button" id="cancelProduct" class="btn">Cancelar</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- 1) Carga primero ZXing (UMD) -->
+  <!-- ZXing primero; tu JS después -->
   <script src="https://unpkg.com/@zxing/browser@0.0.12/umd/index.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <!-- 2) Luego tu JS del dashboard -->
   <script src="/js/dashboard.js"></script>
 </body>
 </html>
