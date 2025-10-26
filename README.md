@@ -1,346 +1,129 @@
 # Inventory Expiry Tracker
 
-A comprehensive web application for tracking product inventory with barcode/QR code scanning, expiry date management, and offline sync capabilities.
+A lightweight web app to scan QR/barcodes with the browser camera, register products (SKU/lot/expiry/quantity), and highlight items that are close to expiry.
 
-## Features
+This README focuses on running with Docker/Docker Compose.
 
-- **Barcode/QR Code Scanning**: Scan product barcodes and QR codes to quickly add items to inventory
-- **External API Integration**: Auto-complete product data from external APIs (Open Food Facts)
-- **Batch Management**: Group products by batch and lot numbers
-- **Expiry Tracking**: Automatically track and prioritize products by expiry date
-- **Offline Support**: Sync operations work offline with conflict resolution
-- **RBAC Authentication**: Role-based access control (Admin, Manager, Worker)
-- **Audit Logs**: Complete audit trail of all operations
-- **Photo Uploads**: Attach label photos to inventory items
-- **CSV Export**: Export inventory data to CSV format
-- **Simple UI**: Worker-friendly interface for efficient operations
+## Requirements
 
-## Technology Stack
+- Docker Desktop (or Docker Engine)
+- Docker Compose v2 (bundled with Docker Desktop)
+- Optional: Node.js 18+ if you want to run without Docker
 
-- **Backend**: Node.js with Express
-- **Database**: SQLite (portable and easy to setup)
-- **Frontend**: Vanilla JavaScript with HTML/CSS
-- **Authentication**: JWT-based with bcrypt password hashing
-- **Security**: Helmet.js, rate limiting, CORS
+## Project layout
 
-## Installation
+- `Dockerfile`: production image (Node 18-alpine)
+- `docker-compose.yml`: development workflow with live-reload (`nodemon`) and bind mounts
+- `public/`: static assets served by the backend
+  - `public/vendor/zxing/index.min.js`: local ZXing UMD (QR/barcode reader)
+- `src/server.js`: Express server
+- `.env.example`: example environment variables
 
-1. Clone the repository:
-```bash
-git clone https://github.com/HectorA15/Hackaton.git
-cd Hackaton
-```
+## Environment variables
 
-2. Install dependencies:
-```bash
-npm install
-```
+Create a `.env` from `.env.example`:
 
-3. Create environment file:
 ```bash
 cp .env.example .env
-# Edit .env with your configuration
+# Edit only if needed; defaults are fine for local dev.
 ```
 
-4. Initialize database:
+Default port is `3000`. If you change `PORT`, update port mapping in `docker-compose.yml` (or when running `docker run`).
+
+## Run (development) with Docker Compose
+
+This mode mounts the source as a volume and runs `nodemon` for the server so changes reflect without rebuilding.
+
 ```bash
-npm run migrate
+docker compose up --build
 ```
 
-5. Start the server:
+- App: http://localhost:3000
+- Changes in `src/` and `public/` are reloaded automatically
+- Dependencies are installed on container start (`npm install`)
+
+If dependencies get out of sync, rebuild clean:
+
 ```bash
+docker compose down
+docker compose up --build
+```
+
+## Run (production) with Docker
+
+```bash
+# Build image
+docker build -t inventory-expiry-tracker .
+
+# Run with .env and port mapping
+docker run --rm -p 3000:3000 --env-file .env inventory-expiry-tracker
+```
+
+App: http://localhost:3000
+
+## Camera scanner (ZXing local)
+
+To avoid CDN failures and ensure compatibility, load ZXing locally from `public/vendor/zxing/index.min.js`.
+
+1) Create the folder (if missing):
+```bash
+# Linux/Mac/WSL
+mkdir -p public/vendor/zxing
+
+# PowerShell (Windows)
+mkdir public\vendor\zxing -Force
+```
+
+2) Download ZXing UMD:
+```bash
+# Linux/Mac/WSL
+curl -L https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js -o public/vendor/zxing/index.min.js
+
+# PowerShell (Windows)
+Invoke-WebRequest "https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js" -OutFile "public\vendor\zxing\index.min.js"
+```
+
+3) Verify it loads:
+- Open http://localhost:3000/vendor/zxing/index.min.js and check it shows minified JS (not a 404/HTML).
+- In DevTools Console: `typeof ZXing` should be "object".
+
+During demo:
+- Use “Solo QR” for QR codes; “Solo barras” for EAN/Code128.
+- Put the code inside the blue frame and move close until the frame is mostly filled.
+- If the scanned SKU doesn’t exist yet, the “New product” modal opens with the code pre-filled; complete Name and Expiry and save.
+
+## Useful commands
+
+- Start dev: `docker compose up --build`
+- Stop: `docker compose down`
+- Follow logs: `docker compose logs -f`
+- Rebuild clean: `docker compose build --no-cache && docker compose up`
+
+## Troubleshooting
+
+- "QR/barcode not detected"
+  - Ensure ZXing is loaded: in Console, `typeof ZXing` → "object".
+  - Validate the file exists: http://localhost:3000/vendor/zxing/index.min.js
+  - Use the right mode (QR vs bars) and move closer to fill the frame.
+  - Close other apps using the camera.
+  - Disable cache: DevTools → Network → “Disable cache” → Ctrl+F5.
+
+- "favicon.ico 404"
+  - Harmless. Browsers request `/favicon.ico` by default. Add a favicon to silence the log or ignore it.
+  - Quick fix (HTML `<head>`):
+    ```html
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%231e40af'/%3E%3Ctext x='50%25' y='52%25' font-family='Arial,sans-serif' font-size='34' text-anchor='middle' fill='white'%3EIE%3C/text%3E%3C/svg%3E">
+    ```
+
+## Run without Docker (optional)
+
+```bash
+npm install
+cp .env.example .env
 npm start
+# App at http://localhost:3000
 ```
-
-For development with auto-reload:
-```bash
-npm run dev
-```
-
-The application will be available at `http://localhost:3000`
-
-## Usage
-
-### First Time Setup
-
-1. The database migration will create all necessary tables
-2. Create an admin user by directly inserting into the database or through the API
-3. Login with admin credentials to create additional users
-
-### Creating Users
-
-Admin users can create new users through the `/api/auth/register` endpoint:
-
-```bash
-curl -X POST http://localhost:3000/api/auth/register \
-  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "username": "worker1",
-    "password": "password123",
-    "role": "worker"
-  }'
-```
-
-### User Roles
-
-- **Admin**: Full access to all features including user management
-- **Manager**: Access to inventory management and reports
-- **Worker**: Basic access to scan items and view inventory
-
-### Scanning Items
-
-1. Navigate to the Scan tab
-2. Enter barcode or QR code (or use camera for scanning)
-3. Select the batch ID
-4. Add location and notes if needed
-5. Submit to add to inventory
-
-### Product Lookup
-
-Products can be looked up by GTIN/barcode. The system will:
-1. Check local database first
-2. If not found, query external API (Open Food Facts)
-3. Save the product to local database for future use
-
-### Batch Management
-
-Batches are automatically sorted by expiry date. Priority levels are calculated based on:
-- Priority 3: Less than 7 days to expiry
-- Priority 2: 7-30 days to expiry
-- Priority 1: 30-90 days to expiry
-- Priority 0: More than 90 days to expiry
-
-### CSV Export
-
-Export inventory data from the Inventory tab. Filter by status before exporting:
-- In Stock
-- Shipped
-- Expired
-- Damaged
-
-### Audit Logs
-
-Admins and Managers can view complete audit logs of all operations including:
-- User actions
-- Entity changes
-- Timestamps
-- IP addresses
-
-## API Documentation
-
-### Authentication
-
-#### Login
-```
-POST /api/auth/login
-Body: { "username": "user", "password": "pass" }
-Response: { "token": "jwt_token", "user": {...} }
-```
-
-#### Get Current User
-```
-GET /api/auth/me
-Header: Authorization: Bearer {token}
-Response: { "id": 1, "username": "user", "role": "worker" }
-```
-
-### Products
-
-#### List Products
-```
-GET /api/products?limit=100&offset=0
-Header: Authorization: Bearer {token}
-```
-
-#### Lookup Product by GTIN
-```
-GET /api/products/lookup/:gtin
-Header: Authorization: Bearer {token}
-```
-
-#### Create Product
-```
-POST /api/products
-Header: Authorization: Bearer {token}
-Body: { "gtin": "1234567890", "name": "Product Name", ... }
-```
-
-### Batches
-
-#### List Batches
-```
-GET /api/batches?expired=false&limit=100
-Header: Authorization: Bearer {token}
-```
-
-#### Create Batch
-```
-POST /api/batches
-Header: Authorization: Bearer {token}
-Body: {
-  "product_id": 1,
-  "batch_number": "BATCH001",
-  "expiry_date": "2024-12-31",
-  "quantity": 100
-}
-```
-
-#### Update Expired Status
-```
-POST /api/batches/update-expired
-Header: Authorization: Bearer {token}
-```
-
-### Inventory
-
-#### List Inventory Items
-```
-GET /api/inventory?status=in_stock&batch_id=1
-Header: Authorization: Bearer {token}
-```
-
-#### Scan Item
-```
-POST /api/inventory/scan
-Header: Authorization: Bearer {token}
-Body: {
-  "barcode": "1234567890",
-  "batch_id": 1,
-  "location": "Warehouse A",
-  "notes": "Optional notes"
-}
-```
-
-#### Update Item Status
-```
-PATCH /api/inventory/:id/status
-Header: Authorization: Bearer {token}
-Body: { "status": "shipped" }
-```
-
-#### Upload Label Photo
-```
-POST /api/inventory/:id/photo
-Header: Authorization: Bearer {token}
-Content-Type: multipart/form-data
-Body: photo file
-```
-
-### Export
-
-#### Export to CSV
-```
-GET /api/export/inventory?status=in_stock
-Header: Authorization: Bearer {token}
-Response: CSV file download
-```
-
-### Audit Logs
-
-#### Get Audit Logs
-```
-GET /api/audit?user_id=1&entity_type=product&limit=100
-Header: Authorization: Bearer {token}
-```
-
-### Sync (Offline Support)
-
-#### Sync Operations
-```
-POST /api/sync/sync
-Header: Authorization: Bearer {token}
-Body: {
-  "operations": [
-    {
-      "operation": "create",
-      "entity_type": "inventory",
-      "data": {...}
-    }
-  ]
-}
-```
-
-## Testing
-
-Run tests:
-```bash
-npm test
-```
-
-Run tests with coverage:
-```bash
-npm test -- --coverage
-```
-
-## Linting
-
-Run ESLint:
-```bash
-npm run lint
-```
-
-## Database Schema
-
-### Users
-- Authentication and authorization
-- Roles: admin, manager, worker
-
-### Products
-- Product master data
-- GTIN/barcode information
-
-### Batches
-- Product batches with lot numbers
-- Expiry date tracking
-- Priority levels
-
-### Inventory Items
-- Individual scanned items
-- Status tracking
-- Location information
-
-### Label Photos
-- Photo attachments for items
-
-### Audit Logs
-- Complete operation history
-
-### Sync Queue
-- Offline operation queue
-- Conflict resolution data
-
-## Security Considerations
-
-1. **Authentication**: JWT-based with secure token generation
-2. **Password Hashing**: Bcrypt with salt rounds
-3. **Rate Limiting**: Prevents brute force attacks
-4. **CORS**: Configured for specific origins
-5. **Helmet**: Security headers
-6. **Input Validation**: All inputs are validated
-7. **SQL Injection**: Parameterized queries prevent SQL injection
-
-## Offline Support
-
-The application includes a sync queue mechanism for offline operation:
-
-1. Operations performed offline are queued locally
-2. When connection is restored, sync endpoint processes queued operations
-3. Conflict resolution is handled server-side
-4. Users are notified of conflicts for manual resolution
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Write tests for new features
-5. Submit a pull request
 
 ## License
 
-MIT License
-
-## Support
-
-For issues and questions, please open an issue on GitHub.
+MIT
