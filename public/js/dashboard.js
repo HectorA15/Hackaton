@@ -50,7 +50,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Ver / Eliminar
+  // Delegación de eventos: Ver / Eliminar
   tableBody?.addEventListener('click', async (e) => {
     const btn = e.target.closest('button');
     if (!btn) return;
@@ -62,9 +62,7 @@ window.addEventListener('DOMContentLoaded', () => {
         if (!r.ok) return alert('No se pudo cargar el producto.');
         const p = await r.json();
         alert(`Nombre: ${p.name}\nSKU: ${p.sku || ''}\nLote: ${p.lot || ''}\nCaducidad: ${p.expiry}\nCantidad: ${p.qty ?? 0}`);
-      } catch (err) {
-        console.error(err);
-      }
+      } catch (err) { console.error(err); }
     } else if (action === 'del') {
       if (!confirm('¿Eliminar producto?')) return;
       await fetch(`/api/products/${id}`, { method:'DELETE' });
@@ -260,28 +258,76 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('openScanner')?.addEventListener('click', startScanner);
   document.getElementById('closeScanner')?.addEventListener('click', stopScanner);
 
-  async function handleScannedCode(code){
-    try {
-      const res = await fetch(`/api/products?sku=${encodeURIComponent(code)}`);
-      const list = await res.json();
-      if (list.length) {
-        const p = list[0];
-        alert(`Producto encontrado: ${p.name}\nCaduca en ${daysUntil(p.expiry)} días`);
-      } else {
-        openProductModal({ sku: code });
-      }
-    } catch(e){
-      console.error(e);
+  // -------- Modal de producto (creación on-demand si no existe)
+  let productModal = document.getElementById('productModal');
+  let productForm = document.getElementById('productForm');
+
+  function ensureProductModal(){
+    productModal = document.getElementById('productModal');
+    productForm = document.getElementById('productForm');
+    if (!productModal) {
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = `
+      <div id="productModal" class="modal hidden" aria-hidden="true">
+        <div class="box">
+          <h3>Nuevo producto</h3>
+          <form id="productForm">
+            <div class="form-grid">
+              <label>Nombre
+                <input type="text" name="name" required />
+              </label>
+              <label>SKU
+                <input type="text" name="sku" />
+              </label>
+              <label>Lote
+                <input type="text" name="lot" />
+              </label>
+              <label>Caducidad
+                <input type="date" name="expiry" required />
+              </label>
+              <label>Cantidad
+                <input type="number" name="qty" min="0" step="1" value="1" required />
+              </label>
+            </div>
+            <div class="actions">
+              <button type="button" id="cancelProduct" class="btn">Cancelar</button>
+              <button type="submit" class="btn btn-primary">Guardar</button>
+            </div>
+          </form>
+        </div>
+      </div>`;
+      document.body.appendChild(wrapper.firstElementChild);
+      productModal = document.getElementById('productModal');
+      productForm = document.getElementById('productForm');
+    }
+    const cancelBtn = document.getElementById('cancelProduct');
+    if (cancelBtn && !cancelBtn.dataset.bound) {
+      cancelBtn.addEventListener('click', () => { productModal.classList.add('hidden'); });
+      cancelBtn.dataset.bound = '1';
+    }
+    if (productForm && !productForm.dataset.bound) {
+      productForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = new FormData(productForm);
+        const body = {
+          name: form.get('name'),
+          sku: form.get('sku'),
+          lot: form.get('lot'),
+          expiry: form.get('expiry'),
+          qty: Number(form.get('qty'))
+        };
+        await fetch('/api/products', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+        productModal.classList.add('hidden');
+        await loadProducts();
+      });
+      productForm.dataset.bound = '1';
     }
   }
 
-  // -------- Alta de producto
-  const productModal = document.getElementById('productModal');
-  const productForm = document.getElementById('productForm');
-  document.getElementById('newProduct')?.addEventListener('click', () => openProductModal());
-  document.getElementById('cancelProduct')?.addEventListener('click', () => { productModal?.classList.add('hidden'); });
+  document.getElementById('newProduct')?.addEventListener('click', () => { ensureProductModal(); openProductModal(); });
 
   function openProductModal(prefill){
+    ensureProductModal();
     if (!productModal || !productForm) return;
     productModal.classList.remove('hidden');
     const fields = ['name','sku','lot','expiry','qty'];
@@ -292,20 +338,19 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  productForm?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const form = new FormData(productForm);
-    const body = {
-      name: form.get('name'),
-      sku: form.get('sku'),
-      lot: form.get('lot'),
-      expiry: form.get('expiry'),
-      qty: Number(form.get('qty'))
-    };
-    await fetch('/api/products', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
-    productModal?.classList.add('hidden');
-    await loadProducts();
-  });
+  // Manejo de código escaneado
+  async function handleScannedCode(code){
+    try {
+      const res = await fetch(`/api/products?sku=${encodeURIComponent(code)}`);
+      const list = await res.json();
+      if (list.length) {
+        const p = list[0];
+        alert(`Producto encontrado: ${p.name}\nCaduca en ${daysUntil(p.expiry)} días`);
+      } else {
+        openProductModal({ sku: code });
+      }
+    } catch(e){ console.error(e); }
+  }
 
   (async () => {
     try {
