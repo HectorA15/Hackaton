@@ -1,4 +1,4 @@
-async function(){
+window.addEventListener('DOMContentLoaded', () => {
   const api = '/api/products';
   const welcomeEl = document.getElementById('welcome');
   const tableBody = document.querySelector('#productsTable tbody');
@@ -7,26 +7,27 @@ async function(){
   function daysUntil(dateStr){
     const today = new Date();
     const d = new Date(dateStr + 'T23:59:59');
-    const diffMs = d - today;
-    return Math.ceil(diffMs / (1000*60*60*24));
+    return Math.ceil((d - today) / 86400000);
   }
 
   function renderProducts(list){
+    if (!tableBody || !summary) return;
     tableBody.innerHTML = '';
     if (!list.length) {
       tableBody.innerHTML = '<tr><td colspan="6" style="color:var(--muted)">No hay productos</td></tr>';
       summary.textContent = 'No hay productos registrados.';
       return;
     }
-    let expiringSoon = 0;
-    list.forEach(p => {
+    let expSoon = 0;
+    for (const p of list){
       const days = daysUntil(p.expiry);
       const badgeClass = days <= 7 ? 'badge warn' : 'badge ok';
-      if (days <= 7) expiringSoon++;
+      if (days <= 7) expSoon++;
+      const lotHtml = p.lot ? `<br><small>Lote: ${p.lot}</small>` : '';
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${p.name}</td>
-        <td>${p.sku || ''} ${p.lot ? '<br><small>Lote: '+p.lot+'</small>':''}</td>
+        <td>${p.sku || ''} ${lotHtml}</td>
         <td>${p.expiry}</td>
         <td><span class="${badgeClass}">${days} días</span></td>
         <td>${p.qty ?? 0}</td>
@@ -35,238 +36,183 @@ async function(){
           <button class="btn btn-small" data-id="${p.id}" data-action="del">Eliminar</button>
         </td>`;
       tableBody.appendChild(tr);
-    });
-    summary.textContent = `${list.length} productos. ${expiringSoon ? expiringSoon + ' próximos a caducar.' : 'Sin caducidades próximas.'}`;
+    }
+    summary.textContent = `${list.length} productos. ${expSoon ? expSoon + ' próximos a caducar.' : 'Sin caducidades próximas.'}`;
   }
 
   async function loadProducts(){
     try{
       const res = await fetch(api);
-      const data = await res.json();
-      renderProducts(data);
+      renderProducts(await res.json());
     }catch(err){
       console.error(err);
-      tableBody.innerHTML = '<tr><td colspan="6" style="color:#c0392b">Error cargando productos</td></tr>';
+      if (tableBody) tableBody.innerHTML = '<tr><td colspan="6" style="color:#c0392b">Error cargando productos</td></tr>';
     }
   }
 
-  // ---------- Scanner mejorado (ROI + BarcodeDetector/ZXing)
-  let codeReader;
-  let selectedDeviceId;
-  let currentStream;
-  let stopLoop = () => {};
+  // Ver / Eliminar
+  tableBody?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    const action = btn.dataset.action;
+    if (action === 'view') {
+      try {
+        const r = await fetch(`/api/products/${id}`);
+        if (!r.ok) return alert('No se pudo cargar el producto.');
+        const p = await r.json();
+        alert(`Nombre: ${p.name}\nSKU: ${p.sku || ''}\nLote: ${p.lot || ''}\nCaducidad: ${p.expiry}\nCantidad: ${p.qty ?? 0}`);
+      } catch (err) {
+        console.error(err);
+      }
+    } else if (action === 'del') {
+      if (!confirm('¿Eliminar producto?')) return;
+      await fetch(`/api/products/${id}`, { method:'DELETE' });
+      await loadProducts();
+    }
+  });
+
+  // ---------- Scanner (prioriza ZXing streaming; si no, BarcodeDetector ROI)
+  let codeReader, currentStream, stopLoop = () => {};
   const scannerModal = document.getElementById('scannerModal');
   const preview = document.getElementById('preview');
+  const scanFrame = document.getElementById('scanFrame') || document.querySelector('.scan-frame');
   const cameraSelect = document.getElementById('cameraSelect');
   const scanMode = document.getElementById('scanMode');
-  const scanFrameEl = document.querySelector('.scan-frame');
   const engineLabel = document.getElementById('engineLabel');
   const hintLabel = document.getElementById('hintLabel');
 
-  preview.setAttribute('autoplay','');
-  preview.setAttribute('playsinline','');
-  preview.muted = true;
-
-  const nativeFormats = {
-    auto: ['qr_code','ean_13','code_128','code_39','upc_a','upc_e','ean_8','itf'],
-    qr:   ['qr_code'],
-    bar:  ['ean_13','code_128','code_39','upc_a','upc_e','ean_8','itf']
-  };
-  const zxingFormats = {
-    auto: ['QR_CODE','EAN_13','CODE_128','CODE_39','UPC_A','UPC_E','EAN_8','ITF'],
-    qr:   ['QR_CODE'],
-    bar:  ['EAN_13','CODE_128','CODE_39','UPC_A','UPC_E','EAN_8','ITF']
-  };
-
-  function ZXING_List(formats){
-    if (!window.ZXing) return [];
-    const out = [];
-    const F = window.ZXing.BarcodeFormat;
-    formats.forEach(f => { if (F[f]) out.push(F[f]); });
-    return out;
-  }
-
   function applyOverlayClass(){
-    if (!scanFrameEl) return;
-    scanFrameEl.classList.remove('auto','qr','bar');
-    const m = scanMode?.value || 'auto';
-    scanFrameEl.classList.add(m);
-    if (hintLabel) {
-      hintLabel.textContent = m === 'qr'
-        ? 'Modo QR: centra el QR y acércalo para que llene el recuadro.'
-        : m === 'bar'
-          ? 'Modo barras: alinea el código horizontalmente dentro del recuadro.'
-          : 'Modo auto: coloca el código dentro del recuadro y acércalo un poco más.';
-    }
+    if (!scanFrame || !scanMode || !hintLabel) return;
+    scanFrame.classList.remove('auto','qr','bar');
+    const m = scanMode.value || 'auto';
+    scanFrame.classList.add(m);
+    hintLabel.textContent = m === 'qr'
+      ? 'Modo QR: centra el QR y acércalo hasta llenar el recuadro.'
+      : m === 'bar'
+        ? 'Modo barras: alinea el código horizontal dentro del recuadro.'
+        : 'Modo auto: coloca el código dentro del recuadro.';
   }
 
   async function enumerateCamerasWithPermission() {
-    const test = await navigator.mediaDevices.getUserMedia({ video: true });
-    test.getTracks().forEach(t => t.stop());
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const videos = devices.filter(d => d.kind === 'videoinput');
+    const t = await navigator.mediaDevices.getUserMedia({ video: true });
+    t.getTracks().forEach(x=>x.stop());
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    const vids = devs.filter(d => d.kind === 'videoinput');
+    if (!cameraSelect) return;
     cameraSelect.innerHTML = '';
-    videos.forEach((d, i) => {
+    vids.forEach((d, i) => {
       const opt = document.createElement('option');
       opt.value = d.deviceId;
       opt.textContent = d.label || `Cámara ${i+1}`;
       cameraSelect.appendChild(opt);
     });
-    const back = videos.find(d => /back|rear|environment/i.test(d.label));
-    selectedDeviceId = back ? back.deviceId : (videos[videos.length - 1]?.deviceId);
-    if (selectedDeviceId) cameraSelect.value = selectedDeviceId;
+    const back = vids.find(d => /back|rear|environment/i.test(d.label));
+    cameraSelect.value = back ? back.deviceId : vids.at(-1)?.deviceId || '';
   }
 
-  function getConstraints() {
-    const base = selectedDeviceId
-      ? { deviceId: { exact: selectedDeviceId } }
-      : { facingMode: { ideal: 'environment' } };
+  function getFormatsFor(mode){
     return {
-      video: {
-        ...base,
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-        advanced: [{ focusMode: 'continuous' }]
-      }
-    };
+      auto: ['QR_CODE','EAN_13','CODE_128','CODE_39','UPC_A','UPC_E','EAN_8','ITF'],
+      qr:   ['QR_CODE'],
+      bar:  ['EAN_13','CODE_128','CODE_39','UPC_A','UPC_E','EAN_8','ITF']
+    }[mode] || ['QR_CODE','EAN_13','CODE_128','CODE_39','UPC_A','UPC_E','EAN_8','ITF'];
   }
 
-  async function openStream() {
-    if (currentStream) {
-      try { currentStream.getTracks().forEach(t => t.stop()); } catch {}
-      currentStream = null;
-    }
-    currentStream = await navigator.mediaDevices.getUserMedia(getConstraints());
-    preview.srcObject = currentStream;
-    try {
-      const track = currentStream.getVideoTracks()[0];
-      const caps = track.getCapabilities?.() || {};
-      const adj = {};
-      if (caps.focusMode?.includes?.('continuous')) adj.focusMode = 'continuous';
-      if (Object.keys(adj).length) await track.applyConstraints({ advanced: [adj] });
-    } catch {}
-    await preview.play().catch(()=>{});
-    await new Promise(r => setTimeout(r, 300));
+  async function startZXingStreaming(){
+    if (!window.ZXing) throw new Error('ZXing no cargado');
+    if (engineLabel) engineLabel.textContent = 'Motor: ZXing (streaming)';
+    const Hints = new Map();
+    const DT = window.ZXing.DecodeHintType;
+    const BF = window.ZXing.BarcodeFormat;
+    const fmts = getFormatsFor(scanMode?.value || 'auto').map(f => BF[f]).filter(Boolean);
+    Hints.set(DT.POSSIBLE_FORMATS, fmts);
+    Hints.set(DT.TRY_HARDER, true);
+
+    if (codeReader) { try { codeReader.reset(); } catch {} }
+    codeReader = new window.ZXing.BrowserMultiFormatReader(Hints);
+
+    const deviceId = cameraSelect?.value || undefined;
+    await codeReader.decodeFromVideoDevice(deviceId, preview, (result, err) => {
+      if (preview && preview.paused) preview.play().catch(()=>{});
+      if (result && result.getText) {
+        const text = result.getText();
+        console.log('SCAN (zxing-stream):', text);
+        handleScannedCode(text);
+        stopScanner();
+      }
+    });
   }
 
   function getRoiRect() {
+    if (!preview) return { rx:0, ry:0, rw:0, rh:0 };
     const vw = preview.videoWidth || 1280;
     const vh = preview.videoHeight || 720;
     const mode = scanMode?.value || 'auto';
     if (mode === 'qr') {
-      const size = Math.floor(Math.min(vw, vh) * 0.6);
-      const rx = Math.floor((vw - size)/2);
-      const ry = Math.floor((vh - size)/2);
-      return { rx, ry, rw: size, rh: size };
+      const size = Math.floor(Math.min(vw, vh) * 0.75);
+      return { rx: (vw-size)/2|0, ry: (vh-size)/2|0, rw: size, rh: size };
     }
     if (mode === 'bar') {
-      const rw = Math.floor(vw * 0.82);
-      const rh = Math.floor(vh * 0.28);
-      const rx = Math.floor((vw - rw)/2);
-      const ry = Math.floor((vh - rh)/2);
-      return { rx, ry, rw, rh };
+      const rw = Math.floor(vw * 0.88);
+      const rh = Math.floor(vh * 0.26);
+      return { rx: (vw-rw)/2|0, ry: (vh-rh)/2|0, rw, rh };
     }
-    const rw = Math.floor(vw * 0.70);
-    const rh = Math.floor(vh * 0.40);
-    const rx = Math.floor((vw - rw)/2);
-    const ry = Math.floor((vh - rh)/2);
-    return { rx, ry, rw, rh };
+    const rw = Math.floor(vw * 0.75);
+    const rh = Math.floor(vh * 0.42);
+    return { rx: (vw-rw)/2|0, ry: (vh-rh)/2|0, rw, rh };
   }
 
   async function startNativeLoopROI() {
-    if (engineLabel) engineLabel.textContent = 'Motor: BarcodeDetector';
-    const fmts = nativeFormats[scanMode?.value] || nativeFormats.auto;
-    const detector = new window.BarcodeDetector({ formats: fmts });
+    if (!('BarcodeDetector' in window)) throw new Error('Sin BarcodeDetector');
+    if (engineLabel) engineLabel.textContent = 'Motor: BarcodeDetector (ROI)';
+    const map = { auto:['qr_code','ean_13','code_128','code_39','upc_a','upc_e','ean_8','itf'], qr:['qr_code'], bar:['ean_13','code_128','code_39','upc_a','upc_e','ean_8','itf'] };
+    const detector = new window.BarcodeDetector({ formats: map[scanMode?.value] || map.auto });
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-    let attempts = 0;
     let stopped = false;
     stopLoop = () => { stopped = true; };
 
     async function tick(){
       if (stopped) return;
-      const vw = preview.videoWidth, vh = preview.videoHeight;
+      const vw = preview?.videoWidth, vh = preview?.videoHeight;
       if (vw && vh) {
         const {rx, ry, rw, rh} = getRoiRect();
-        for (const scale of [2, 3]) {
+        for (const scale of [3, 2]) {
           canvas.width = rw * scale; canvas.height = rh * scale;
           ctx.imageSmoothingEnabled = false;
           ctx.drawImage(preview, rx, ry, rw, rh, 0, 0, rw*scale, rh*scale);
           try {
             const codes = await detector.detect(canvas);
             if (codes && codes.length) {
-              handleScannedCode(codes[0].rawValue);
+              const text = codes[0].rawValue;
+              console.log('SCAN (native-ROI):', text);
+              handleScannedCode(text);
               stopScanner();
               return;
             }
           } catch {}
         }
       }
-      attempts++;
-      if (attempts > 60) { // ~1-2s, fallback a ZXing
-        await startZXingLoopROI();
-        return;
-      }
       requestAnimationFrame(tick);
     }
     tick();
   }
 
-  async function startZXingLoopROI() {
-    if (engineLabel) engineLabel.textContent = 'Motor: ZXing';
-    if (!window.ZXing) return;
-    const hints = new Map();
-    const DT = window.ZXing.DecodeHintType;
-    hints.set(DT.POSSIBLE_FORMATS, ZXING_List(zxingFormats[scanMode?.value] || zxingFormats.auto));
-    hints.set(DT.TRY_HARDER, true);
-
-    if (codeReader) { try { codeReader.reset(); } catch {} }
-    codeReader = new window.ZXing.BrowserMultiFormatReader(hints);
-
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-    let stopped = false;
-    stopLoop = () => { stopped = true; try { codeReader.reset(); } catch {} };
-
-    async function tick(){
-      if (stopped) return;
-      const vw = preview.videoWidth, vh = preview.videoHeight;
-      if (vw && vh) {
-        const {rx, ry, rw, rh} = getRoiRect();
-        for (const scale of [3, 2, 1]) {
-          canvas.width = rw * scale; canvas.height = rh * scale;
-          ctx.imageSmoothingEnabled = false;
-          ctx.drawImage(preview, rx, ry, rw, rh, 0, 0, rw*scale, rh*scale);
-          try {
-            const result = await codeReader.decodeFromCanvas(canvas);
-            if (result?.getText) {
-              handleScannedCode(result.getText());
-              stopScanner();
-              return;
-            }
-          } catch {
-            // NotFound: seguir
-          }
-        }
-      }
-      setTimeout(tick, 70);
-    }
-    tick();
-  }
-
   async function startScanner() {
+    if (!scannerModal) return;
     scannerModal.classList.remove('hidden');
     scannerModal.setAttribute('aria-hidden','false');
     applyOverlayClass();
     try {
       await enumerateCamerasWithPermission();
-      await openStream();
-      if ('BarcodeDetector' in window) {
+      try {
+        await startZXingStreaming();
+      } catch (e) {
+        console.warn('ZXing streaming no disponible, usando BarcodeDetector ROI:', e);
+        await openBasicStream();
         await startNativeLoopROI();
-      } else {
-        await startZXingLoopROI();
       }
     } catch (e) {
       console.error('No se pudo iniciar el escáner:', e);
@@ -275,14 +221,24 @@ async function(){
     }
   }
 
+  async function openBasicStream(){
+    const constraints = cameraSelect?.value ? { video: { deviceId: { exact: cameraSelect.value } } }
+                                           : { video: { facingMode: { ideal: 'environment' } } };
+    currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+    preview.srcObject = currentStream;
+    await preview.play().catch(()=>{});
+    await new Promise(r => setTimeout(r, 200));
+  }
+
   async function restartScanner(){
     stopOnlyLoops();
     applyOverlayClass();
-    await openStream();
-    if ('BarcodeDetector' in window) {
+    try {
+      await startZXingStreaming();
+    } catch (e) {
+      console.warn('ZXing streaming no disponible en restart, ROI nativo:', e);
+      await openBasicStream();
       await startNativeLoopROI();
-    } else {
-      await startZXingLoopROI();
     }
   }
 
@@ -293,18 +249,16 @@ async function(){
 
   function stopScanner() {
     stopOnlyLoops();
-    if (currentStream) {
-      try { currentStream.getTracks().forEach(t => t.stop()); } catch {}
-      currentStream = null;
-    }
+    if (currentStream) { try { currentStream.getTracks().forEach(t => t.stop()); } catch {} currentStream = null; }
+    if (!scannerModal) return;
     scannerModal.classList.add('hidden');
     scannerModal.setAttribute('aria-hidden','true');
   }
 
   cameraSelect?.addEventListener('change', restartScanner);
   scanMode?.addEventListener('change', restartScanner);
-  document.getElementById('openScanner').addEventListener('click', startScanner);
-  document.getElementById('closeScanner').addEventListener('click', stopScanner);
+  document.getElementById('openScanner')?.addEventListener('click', startScanner);
+  document.getElementById('closeScanner')?.addEventListener('click', stopScanner);
 
   async function handleScannedCode(code){
     try {
@@ -324,19 +278,21 @@ async function(){
   // -------- Alta de producto
   const productModal = document.getElementById('productModal');
   const productForm = document.getElementById('productForm');
-  document.getElementById('newProduct').addEventListener('click', () => openProductModal());
-  document.getElementById('cancelProduct').addEventListener('click', () => { productModal.classList.add('hidden'); });
+  document.getElementById('newProduct')?.addEventListener('click', () => openProductModal());
+  document.getElementById('cancelProduct')?.addEventListener('click', () => { productModal?.classList.add('hidden'); });
 
-  function openProductModal(prefill={} as any){
+  function openProductModal(prefill){
+    if (!productModal || !productForm) return;
     productModal.classList.remove('hidden');
-    for(const k of ['name','sku','lot','expiry','qty']){
-      if(prefill[k] !== undefined) productForm.elements[k].value = prefill[k];
-      else if(k === 'qty') productForm.elements[k].value = 1;
+    const fields = ['name','sku','lot','expiry','qty'];
+    for (const k of fields){
+      if (prefill && prefill[k] !== undefined) productForm.elements[k].value = prefill[k];
+      else if (k === 'qty') productForm.elements[k].value = 1;
       else productForm.elements[k].value = '';
     }
   }
 
-  productForm.addEventListener('submit', async (e) => {
+  productForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = new FormData(productForm);
     const body = {
@@ -347,17 +303,18 @@ async function(){
       qty: Number(form.get('qty'))
     };
     await fetch('/api/products', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
-    productModal.classList.add('hidden');
+    productModal?.classList.add('hidden');
     await loadProducts();
   });
 
-  try {
-    const s = await fetch('/api/session');
-    if (s.ok){
-      const user = await s.json();
-      welcomeEl.textContent = `Bienvenido ${user.username}`;
-    }
-  } catch(e){}
-
-  await loadProducts();
-}();
+  (async () => {
+    try {
+      const s = await fetch('/api/session');
+      if (s.ok){
+        const user = await s.json();
+        if (welcomeEl) welcomeEl.textContent = `Bienvenido ${user.username}`;
+      }
+    } catch(e){}
+    await loadProducts();
+  })();
+});
