@@ -6,10 +6,9 @@
   <title>Dashboard - Inventory Expiry Tracker</title>
   <link rel="stylesheet" href="/css/style.css" />
   <style>
-    /* Pequeñas reglas extra específicas del dashboard */
-    .toolbar{display:flex;gap:12px;align-items:center;margin:16px 0}
+    .toolbar{display:flex;gap:12px;align-items:center;margin:16px 0;flex-wrap:wrap}
     .products-table{width:100%;border-collapse:collapse;margin-top:12px}
-    .products-table th, .products-table td{padding:10px;border-bottom:1px solid #eef4ff;text-align:left}
+    .products-table th,.products-table td{padding:10px;border-bottom:1px solid #eef4ff;text-align:left}
     .badge{display:inline-block;padding:6px 8px;border-radius:8px;font-size:13px}
     .badge.warn{background:#fff7e6;color:#8a5800}
     .badge.ok{background:#f3fff6;color:#116630}
@@ -17,7 +16,7 @@
     .modal .box{background:#fff;padding:12px;border-radius:10px;max-width:920px;width:100%;max-height:90vh;overflow:auto}
     video#preview{width:100%;height:auto;border-radius:8px;background:#000}
     .hidden{display:none}
-    .actions .btn{margin-right:8px}
+    .select{padding:8px;border-radius:6px;border:1px solid #e7eefb;background:#fff}
   </style>
 </head>
 <body>
@@ -32,7 +31,7 @@
 
   <main class="container">
     <section>
-      <div style="display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
         <h2 id="welcome">Bienvenido</h2>
         <div class="toolbar">
           <button id="openScanner" class="btn btn-primary">Escanear (cámara)</button>
@@ -54,23 +53,26 @@
   <!-- Modal scanner -->
   <div id="scannerModal" class="modal hidden" aria-hidden="true">
     <div class="box">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;flex-wrap:wrap">
         <h3>Escanear código</h3>
-        <button id="closeScanner" class="btn">Cerrar</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="cameraSelect" class="select"></select>
+          <button id="closeScanner" class="btn">Cerrar</button>
+        </div>
       </div>
-      <video id="preview"></video>
+      <video id="preview" autoplay playsinline muted></video>
       <p style="margin-top:8px;color:var(--muted)">Apunta un código de barras o QR hacia la cámara.</p>
     </div>
   </div>
 
-  <!-- Modal nuevo producto (simple) -->
+  <!-- Modal nuevo producto -->
   <div id="productModal" class="modal hidden">
     <div class="box">
       <h3>Nuevo producto</h3>
       <form id="productForm">
         <label>Nombre<br><input name="name" required/></label>
         <label>SKU / Código<br><input name="sku" required/></label>
-        <label>Lote<br><input name="lot" /></label>
+        <label>Lote<br><input name="lot"/></label>
         <label>Fecha de caducidad<br><input type="date" name="expiry" required/></label>
         <label>Cantidad<br><input type="number" name="qty" value="1" min="0" required/></label>
         <div style="margin-top:10px">
@@ -82,7 +84,6 @@
   </div>
 
   <script src="/js/dashboard.js"></script>
-  <!-- Incluir librería de lectura de códigos si quieres (opcional). Aquí usamos ZXing via CDN as example -->
   <script src="https://unpkg.com/@zxing/browser@0.0.12/umd/index.min.js"></script>
 </body>
 </html>
